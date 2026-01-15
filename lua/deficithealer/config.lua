@@ -64,7 +64,15 @@ function Config.Load(charName)
         if ok and saved and type(saved) == 'table' then
             for k, v in pairs(saved) do
                 if Config[k] ~= nil then
-                    Config[k] = v
+                    -- Special handling for spells: merge instead of replace
+                    -- This preserves empty categories that weren't saved
+                    if k == 'spells' and type(v) == 'table' then
+                        for cat, spellList in pairs(v) do
+                            Config.spells[cat] = spellList
+                        end
+                    else
+                        Config[k] = v
+                    end
                 end
             end
         end
