@@ -62,7 +62,7 @@ function TargetMonitor.Update()
             if not isPriority then
                 table.insert(TargetMonitor.groupTargets, {
                     name = member.Name(),
-                    spawn = member.Spawn,
+                    spawn = mq.TLO.Spawn('pc ' .. member.Name()),  -- Consistent with raid targets
                     role = 'Group',
                 })
             end
@@ -81,7 +81,7 @@ function TargetMonitor.Update()
     if not selfTracked then
         table.insert(TargetMonitor.groupTargets, {
             name = selfName,
-            spawn = mq.TLO.Me,
+            spawn = mq.TLO.Spawn('pc ' .. selfName),  -- Consistent pattern
             role = 'Self',
         })
     end

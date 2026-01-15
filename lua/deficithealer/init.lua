@@ -24,6 +24,12 @@ local DeficitHealer = {
 -- Track pending heal info for analytics (declared before event handler uses it)
 local pendingHealInfo = nil
 
+-- Track pending group heal info separately (group heals fire multiple events)
+local pendingGroupHeal = nil  -- { spell, startTime, deficit, heals = {} }
+
+-- Track when we first noticed each target needed healing (for reaction time)
+local firstNoticedDeficit = {}  -- targetName -> { time, deficitPct }
+
 -- Event pattern for heal landing
 -- Format: "You have been healed for X points by SpellName."
 -- Format: "TargetName has been healed for X points by SpellName."
@@ -31,27 +37,29 @@ mq.event('HealLanded', '#1# ha#*#been healed for #2# point#*#by #3#.', function(
     local numAmount = tonumber(amount)
     if numAmount and spell then
         spell = spell:gsub('%.$', '')  -- Remove trailing period
-        -- Only track heals from spells in our configured spell list
-        -- This filters out heals cast by other players
-        local isOurSpell = false
-        if Config and Config.spells then
-            for category, spells in pairs(Config.spells) do
-                for _, s in ipairs(spells) do
-                    if s == spell then
-                        isOurSpell = true
-                        break
-                    end
-                end
-                if isOurSpell then break end
-            end
+
+        -- Check if we recently cast this spell (not just if it's in our config)
+        -- This prevents tracking heals from other clerics with the same spells
+        local isOurCast = false
+        local isGroupHeal = false
+
+        if pendingGroupHeal and pendingGroupHeal.spell == spell then
+            isOurCast = true
+            isGroupHeal = true
+        elseif pendingHealInfo and pendingHealInfo.spell == spell then
+            isOurCast = true
         end
-        if isOurSpell then
+
+        if isOurCast then
             HealTracker.RecordHeal(spell, numAmount)
 
-            -- Record analytics if we have pending heal info for this spell
-            if pendingHealInfo and pendingHealInfo.spell == spell then
+            if isGroupHeal then
+                -- Accumulate group heal data - don't clear until timeout
+                table.insert(pendingGroupHeal.heals, { target = target, amount = numAmount })
+            else
+                -- Single target heal - record analytics and clear pending info
                 Analytics.RecordHeal(spell, numAmount, pendingHealInfo.deficit, pendingHealInfo.target)
-                pendingHealInfo = nil  -- Clear after recording
+                pendingHealInfo = nil
             end
         end
     end
@@ -94,6 +102,14 @@ end
 function DeficitHealer.CastHeal(spellName, targetName, deficit, expected)
     if DeficitHealer.casting then return false end
 
+    -- Record reaction time if we have first noticed deficit for this target
+    local noticed = firstNoticedDeficit[targetName]
+    if noticed then
+        local reactionMs = (os.clock() * 1000) - noticed.time
+        Analytics.RecordReactionTime(noticed.deficitPct, reactionMs)
+        firstNoticedDeficit[targetName] = nil
+    end
+
     mq.cmdf('/target %s', targetName)
     mq.delay(100)
     mq.cmdf('/cast "%s"', spellName)
@@ -131,9 +147,31 @@ function DeficitHealer.ProcessHealing()
         DeficitHealer.casting = false
     end
 
+    -- Check if pendingGroupHeal is stale (> 2 seconds old) and finalize it
+    if pendingGroupHeal and (os.time() - pendingGroupHeal.startTime) > 2 then
+        local totalHealed = 0
+        for _, h in ipairs(pendingGroupHeal.heals) do
+            totalHealed = totalHealed + h.amount
+        end
+        Analytics.RecordHeal(pendingGroupHeal.spell, totalHealed, pendingGroupHeal.deficit, 'Group')
+        pendingGroupHeal = nil
+    end
+
     local allTargets = TargetMonitor.GetAllTargets()
     local priorityTargets = TargetMonitor.GetPriorityTargets()
     local groupTargets = TargetMonitor.GetGroupTargets()
+
+    -- Track when we first notice each target with a deficit (for reaction time)
+    for _, t in ipairs(allTargets) do
+        if t.deficit > 0 and not firstNoticedDeficit[t.name] then
+            firstNoticedDeficit[t.name] = {
+                time = os.clock() * 1000,  -- milliseconds
+                deficitPct = (t.deficit / t.maxHP) * 100
+            }
+        elseif t.deficit == 0 then
+            firstNoticedDeficit[t.name] = nil  -- Clear when healed
+        end
+    end
 
     -- Build situation context
     local situation = {
@@ -171,7 +209,30 @@ function DeficitHealer.ProcessHealing()
         for _, t in ipairs(allTargets) do
             if t.deficit > 0 then totalDeficit = totalDeficit + t.deficit end
         end
-        DeficitHealer.CastHeal(groupHeal.spell, mq.TLO.Me.Name(), totalDeficit, groupHeal.expected * (groupHeal.targets or 1))
+
+        -- Set up pendingGroupHeal instead of pendingHealInfo for group heals
+        -- This allows accumulating multiple heal events from the group heal
+        pendingGroupHeal = {
+            spell = groupHeal.spell,
+            deficit = totalDeficit,
+            startTime = os.time(),
+            heals = {}
+        }
+
+        -- Cast the group heal (don't use DeficitHealer.CastHeal to avoid setting pendingHealInfo)
+        if not DeficitHealer.casting then
+            mq.cmdf('/target %s', mq.TLO.Me.Name())
+            mq.delay(100)
+            mq.cmdf('/cast "%s"', groupHeal.spell)
+
+            DeficitHealer.casting = true
+            HealSelector.SetLastAction({
+                spell = groupHeal.spell,
+                target = mq.TLO.Me.Name(),
+                expected = groupHeal.expected * (groupHeal.targets or 1),
+                time = os.time()
+            })
+        end
         return
     end
 
