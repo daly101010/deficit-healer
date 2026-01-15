@@ -2,6 +2,7 @@
 local mq = require('mq')
 local Config = require('deficithealer.config')
 local HealTracker = require('deficithealer.healtracker')
+local TargetMonitor = require('deficithealer.targetmonitor')
 
 local DeficitHealer = {
     running = false,
@@ -23,6 +24,7 @@ end)
 function DeficitHealer.Init()
     Config.Load(DeficitHealer.charName)
     HealTracker.Init(nil, Config.learningWeight)
+    TargetMonitor.Init()
     print('[DeficitHealer] Loaded configuration for ' .. DeficitHealer.charName)
     DeficitHealer.running = true
 end
