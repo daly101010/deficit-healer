@@ -1,0 +1,12 @@
+# MacroQuest config files (contain character-specific data)
+*_data.lua
+*_config.lua
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
