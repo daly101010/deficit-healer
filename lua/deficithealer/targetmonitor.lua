@@ -5,12 +5,16 @@ local TargetMonitor = {
     priorityTargets = {},   -- MT/MA from raid
     groupTargets = {},      -- Group members
     damageHistory = {},     -- target -> { timestamps, amounts }
+    lastHP = {},            -- targetName -> lastKnownHP for damage tracking
+    config = nil,           -- Config reference for squishy threshold
 }
 
-function TargetMonitor.Init()
+function TargetMonitor.Init(cfg)
     TargetMonitor.priorityTargets = {}
     TargetMonitor.groupTargets = {}
     TargetMonitor.damageHistory = {}
+    TargetMonitor.lastHP = {}
+    TargetMonitor.config = cfg
 end
 
 function TargetMonitor.Update()
@@ -81,9 +85,30 @@ function TargetMonitor.Update()
             role = 'Self',
         })
     end
+
+    -- Track damage by comparing HP changes between updates
+    -- This enables proactive HoT triggers based on DPS
+    local function trackDamageForTargets(targets)
+        for _, t in ipairs(targets) do
+            local info = TargetMonitor.GetTargetInfo(t)
+            if info then
+                local prevHP = TargetMonitor.lastHP[info.name] or info.currentHP
+                if info.currentHP < prevHP then
+                    local damage = prevHP - info.currentHP
+                    TargetMonitor.RecordDamage(info.name, damage)
+                end
+                TargetMonitor.lastHP[info.name] = info.currentHP
+            end
+        end
+    end
+
+    trackDamageForTargets(TargetMonitor.priorityTargets)
+    trackDamageForTargets(TargetMonitor.groupTargets)
 end
 
 function TargetMonitor.GetTargetInfo(target)
+    -- spawn is a TLO reference (from Spawn(), Me, or member.Spawn)
+    -- Calling spawn() returns the spawn ID or nil if invalid
     local spawn = target.spawn
     if not spawn or not spawn() then
         return nil
@@ -94,6 +119,7 @@ function TargetMonitor.GetTargetInfo(target)
     local pctHP = spawn.PctHPs() or 100
     local deficit = maxHP - currentHP
 
+    local squishyThreshold = (TargetMonitor.config and TargetMonitor.config.squishyMaxHP) or 80000
     return {
         name = target.name,
         role = target.role,
@@ -101,7 +127,7 @@ function TargetMonitor.GetTargetInfo(target)
         maxHP = maxHP,
         pctHP = pctHP,
         deficit = deficit,
-        isSquishy = maxHP < 80000, -- Will use config value later
+        isSquishy = maxHP < squishyThreshold,
     }
 end
 

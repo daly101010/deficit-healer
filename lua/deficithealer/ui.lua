@@ -69,10 +69,15 @@ function UI.DrawStatusTab()
     if lastAction then
         ImGui.Text('Last Action:')
         ImGui.SameLine()
-        ImGui.TextColored(0.5, 0.8, 1.0, 1.0, string.format('%s on %s (%s)',
-            lastAction.spell or 'Unknown',
-            lastAction.target or 'Unknown',
-            formatK(lastAction.expected or 0)))
+        -- Handle both string (legacy) and table formats
+        if type(lastAction) == 'string' then
+            ImGui.TextColored(0.5, 0.8, 1.0, 1.0, lastAction)
+        else
+            ImGui.TextColored(0.5, 0.8, 1.0, 1.0, string.format('%s on %s (%s)',
+                lastAction.spell or 'Unknown',
+                lastAction.target or 'Unknown',
+                formatK(lastAction.expected or 0)))
+        end
     else
         ImGui.TextDisabled('Last Action: None')
     end
@@ -472,7 +477,12 @@ function UI.DrawCompact()
     -- Last action (compact)
     local lastAction = modules.healselector and modules.healselector.GetLastAction()
     if lastAction then
-        ImGui.TextDisabled(string.format('| %s', lastAction.spell or ''))
+        -- Handle both string (legacy) and table formats
+        if type(lastAction) == 'string' then
+            ImGui.TextDisabled(string.format('| %s', lastAction))
+        else
+            ImGui.TextDisabled(string.format('| %s', lastAction.spell or ''))
+        end
     end
 
     -- Priority targets only
