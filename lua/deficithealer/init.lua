@@ -35,12 +35,14 @@ local lastCastSpell = nil
 local lastCastTime = 0
 
 -- Event pattern for heal landing
--- Format: "You have been healed for X points by SpellName."
--- Format: "TargetName has been healed for X points by SpellName."
-mq.event('HealLanded', '#1# ha#*#been healed for #2# point#*#by #3#.', function(target, amount, spell)
-    local numAmount = tonumber(amount)
+-- Actual format: "You healed Targetname for 234 (1096) hit points by Spell Name."
+mq.event('HealLanded', 'You healed #1# for #2# (#3#) hit points by #4#', function(line, target, amount, fullAmount, spell)
+    -- First param is full line, then captures follow
+    -- Use fullAmount for learning (the spell's actual healing power)
+    local numAmount = tonumber(fullAmount) or tonumber(amount)
     if numAmount and spell then
         spell = spell:gsub('%.$', '')  -- Remove trailing period
+        spell = spell:gsub(' %(Critical%)$', '')  -- Remove (Critical) suffix
 
         -- Check if we cast this spell (script-initiated or manual)
         -- This prevents tracking heals from other clerics with the same spells
@@ -321,6 +323,10 @@ end)
 
 mq.bind('/dhui', function()
     UI.Toggle()
+end)
+
+mq.bind('/dhreset', function()
+    HealTracker.Reset()
 end)
 
 -- Start the script

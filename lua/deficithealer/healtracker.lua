@@ -97,4 +97,19 @@ function HealTracker.GetData()
     return HealTracker.heals
 end
 
+function HealTracker.Reset()
+    HealTracker.heals = {}
+    HealTracker.recentHeals = {}
+    HealTracker.learningMode = true
+    print('[DeficitHealer] Heal data reset')
+end
+
+function HealTracker.ResetSpell(spellName)
+    if HealTracker.heals[spellName] then
+        HealTracker.heals[spellName] = nil
+        updateLearningMode()
+        print('[DeficitHealer] Reset data for: ' .. spellName)
+    end
+end
+
 return HealTracker
