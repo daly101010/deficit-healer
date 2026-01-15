@@ -30,6 +30,10 @@ local pendingGroupHeal = nil  -- { spell, startTime, deficit, heals = {} }
 -- Track when we first noticed each target needed healing (for reaction time)
 local firstNoticedDeficit = {}  -- targetName -> { time, deficitPct }
 
+-- Track last spell we cast (for manual cast learning)
+local lastCastSpell = nil
+local lastCastTime = 0
+
 -- Event pattern for heal landing
 -- Format: "You have been healed for X points by SpellName."
 -- Format: "TargetName has been healed for X points by SpellName."
@@ -38,29 +42,36 @@ mq.event('HealLanded', '#1# ha#*#been healed for #2# point#*#by #3#.', function(
     if numAmount and spell then
         spell = spell:gsub('%.$', '')  -- Remove trailing period
 
-        -- Check if we recently cast this spell (not just if it's in our config)
+        -- Check if we cast this spell (script-initiated or manual)
         -- This prevents tracking heals from other clerics with the same spells
         local isOurCast = false
         local isGroupHeal = false
+        local isManualCast = false
 
         if pendingGroupHeal and pendingGroupHeal.spell == spell then
             isOurCast = true
             isGroupHeal = true
         elseif pendingHealInfo and pendingHealInfo.spell == spell then
             isOurCast = true
+        elseif lastCastSpell == spell and (os.time() - lastCastTime) < 10 then
+            -- Manual cast - we recently cast this spell (within 10 seconds)
+            isOurCast = true
+            isManualCast = true
         end
 
         if isOurCast then
+            -- Always track for learning
             HealTracker.RecordHeal(spell, numAmount)
 
             if isGroupHeal then
                 -- Accumulate group heal data - don't clear until timeout
                 table.insert(pendingGroupHeal.heals, { target = target, amount = numAmount })
-            else
-                -- Single target heal - record analytics and clear pending info
+            elseif not isManualCast then
+                -- Script-initiated single target heal - record analytics and clear pending info
                 Analytics.RecordHeal(spell, numAmount, pendingHealInfo.deficit, pendingHealInfo.target)
                 pendingHealInfo = nil
             end
+            -- Manual casts only go to HealTracker for learning, not Analytics
         end
     end
 end)
@@ -142,6 +153,12 @@ function DeficitHealer.ProcessHealing()
     -- Check casting state
     if mq.TLO.Me.Casting() then
         DeficitHealer.casting = true
+        -- Track what we're casting for manual cast detection
+        local castingName = mq.TLO.Me.Casting.Name()
+        if castingName then
+            lastCastSpell = castingName
+            lastCastTime = os.time()
+        end
         return
     else
         DeficitHealer.casting = false
