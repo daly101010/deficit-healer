@@ -1,5 +1,6 @@
 -- ui.lua
 require 'ImGui'
+local mq = require('mq')
 
 local UI = {
     open = true,
@@ -404,11 +405,41 @@ function UI.DrawConfigTab()
     end
 
     ImGui.Spacing()
+    ImGui.Text('Spell Configuration')
+    ImGui.Separator()
+
+    -- Show spells in each category
+    for category, spells in pairs(config.spells) do
+        if ImGui.TreeNode(category:upper()) then
+            -- List current spells with remove buttons
+            for i, spell in ipairs(spells) do
+                ImGui.Text(string.format('%d. %s', i, spell))
+                ImGui.SameLine()
+                if ImGui.SmallButton('Remove##' .. category .. i) then
+                    table.remove(config.spells[category], i)
+                end
+            end
+
+            -- Add from memorized spell gems
+            ImGui.Text('Add from memorized spells:')
+            for gem = 1, 13 do
+                local spellName = mq.TLO.Me.Gem(gem).Name()
+                if spellName and spellName ~= '' then
+                    if ImGui.SmallButton(spellName .. '##add' .. category) then
+                        table.insert(config.spells[category], spellName)
+                    end
+                end
+            end
+
+            ImGui.TreePop()
+        end
+    end
+
+    ImGui.Spacing()
     ImGui.Separator()
 
     -- Save Config button
     if ImGui.Button('Save Config') then
-        local mq = require('mq')
         local charName = mq.TLO.Me.Name() or 'Unknown'
         config.Save(charName)
         print('[DeficitHealer] Config saved!')
