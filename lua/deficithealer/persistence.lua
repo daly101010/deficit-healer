@@ -6,6 +6,11 @@ local mq = require('mq')
 
 local Persistence = {}
 
+-- Helper to construct the data file path for a character
+local function getDataPath(charName)
+    return mq.configDir .. '/deficithealer_' .. charName .. '_data.lua'
+end
+
 -- Helper to serialize Lua values to string
 local function serializeValue(val, indent)
     indent = indent or ''
@@ -26,7 +31,7 @@ local function serializeValue(val, indent)
         for k, v in pairs(val) do
             local keyStr
             if type(k) == 'string' then
-                keyStr = k
+                keyStr = string.format('[%q]', k)
             else
                 keyStr = '[' .. tostring(k) .. ']'
             end
@@ -45,8 +50,7 @@ end
 ---@param analyticsHistory table|nil Analytics history to persist
 ---@return boolean success True if save was successful
 function Persistence.Save(charName, healData, analyticsHistory)
-    local configDir = mq.configDir
-    local path = configDir .. '/deficithealer_' .. charName .. '_data.lua'
+    local path = getDataPath(charName)
 
     local data = {
         healData = healData,
@@ -70,8 +74,7 @@ end
 ---@return table|nil healData Loaded heal data or nil if not found/corrupt
 ---@return table|nil analyticsHistory Loaded analytics history or nil if not found/corrupt
 function Persistence.Load(charName)
-    local configDir = mq.configDir
-    local path = configDir .. '/deficithealer_' .. charName .. '_data.lua'
+    local path = getDataPath(charName)
 
     local f = io.open(path, 'r')
     if f then
@@ -88,8 +91,7 @@ end
 ---@param charName string Character name to check
 ---@return boolean exists True if data file exists
 function Persistence.Exists(charName)
-    local configDir = mq.configDir
-    local path = configDir .. '/deficithealer_' .. charName .. '_data.lua'
+    local path = getDataPath(charName)
     local f = io.open(path, 'r')
     if f then
         f:close()
@@ -101,8 +103,7 @@ end
 --- Delete persistence data for a character
 ---@param charName string Character name to delete data for
 function Persistence.Delete(charName)
-    local configDir = mq.configDir
-    local path = configDir .. '/deficithealer_' .. charName .. '_data.lua'
+    local path = getDataPath(charName)
     os.remove(path)
 end
 
