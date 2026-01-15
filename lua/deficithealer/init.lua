@@ -56,6 +56,7 @@ end)
 DeficitHealer.Init()
 
 while DeficitHealer.running do
+    TargetMonitor.Update()
     mq.delay(100)
     mq.doevents()
 end
