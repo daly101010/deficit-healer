@@ -412,9 +412,7 @@ function UI.DrawConfigTab()
     for category, spells in pairs(config.spells) do
         if ImGui.TreeNode(category:upper()) then
             -- List current spells with remove buttons
-            -- Iterate backwards so removals don't affect remaining indices
-            for i = #spells, 1, -1 do
-                local spell = spells[i]
+            for i, spell in ipairs(spells) do
                 ImGui.Text(string.format('%d. %s', i, spell))
                 ImGui.SameLine()
                 if ImGui.SmallButton('Remove##' .. category .. i) then
