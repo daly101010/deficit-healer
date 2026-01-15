@@ -412,7 +412,9 @@ function UI.DrawConfigTab()
     for category, spells in pairs(config.spells) do
         if ImGui.TreeNode(category:upper()) then
             -- List current spells with remove buttons
-            for i, spell in ipairs(spells) do
+            -- Iterate backwards so removals don't affect remaining indices
+            for i = #spells, 1, -1 do
+                local spell = spells[i]
                 ImGui.Text(string.format('%d. %s', i, spell))
                 ImGui.SameLine()
                 if ImGui.SmallButton('Remove##' .. category .. i) then
@@ -426,7 +428,17 @@ function UI.DrawConfigTab()
                 local spellName = mq.TLO.Me.Gem(gem).Name()
                 if spellName and spellName ~= '' then
                     if ImGui.SmallButton(spellName .. '##add' .. category) then
-                        table.insert(config.spells[category], spellName)
+                        -- Check if spell already exists before adding
+                        local exists = false
+                        for _, s in ipairs(config.spells[category]) do
+                            if s == spellName then
+                                exists = true
+                                break
+                            end
+                        end
+                        if not exists then
+                            table.insert(config.spells[category], spellName)
+                        end
                     end
                 end
             end
