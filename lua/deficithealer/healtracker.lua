@@ -7,22 +7,32 @@ local HealTracker = {
     learningMode = true,
 }
 
+local function updateLearningMode()
+    local reliableCount = 0
+    for _, data in pairs(HealTracker.heals) do
+        if data.count >= 10 then
+            reliableCount = reliableCount + 1
+        end
+    end
+    HealTracker.learningMode = reliableCount < 3
+end
+
 function HealTracker.Init(savedData, weight)
     HealTracker.weight = weight or 0.1
     if savedData then
         HealTracker.heals = savedData
-        -- Check if we have enough data to exit learning mode
-        local reliableCount = 0
-        for _, data in pairs(HealTracker.heals) do
-            if data.count >= 10 then
-                reliableCount = reliableCount + 1
-            end
-        end
-        HealTracker.learningMode = reliableCount < 3
+        updateLearningMode()
     end
 end
 
 function HealTracker.RecordHeal(spellName, amount)
+    if not spellName or type(spellName) ~= 'string' or spellName == '' then
+        return false
+    end
+    if not amount or type(amount) ~= 'number' or amount <= 0 then
+        return false
+    end
+
     if not HealTracker.heals[spellName] then
         HealTracker.heals[spellName] = {
             avg = amount,
@@ -59,13 +69,7 @@ function HealTracker.RecordHeal(spellName, amount)
 
     -- Update learning mode
     if HealTracker.learningMode then
-        local reliableCount = 0
-        for _, data in pairs(HealTracker.heals) do
-            if data.count >= 10 then
-                reliableCount = reliableCount + 1
-            end
-        end
-        HealTracker.learningMode = reliableCount < 3
+        updateLearningMode()
     end
 end
 
