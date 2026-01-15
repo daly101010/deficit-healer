@@ -52,12 +52,16 @@ local function serializeTable(t, indent)
 end
 
 function Config.Load(charName)
+    if not charName or charName == '' then
+        return Config
+    end
+
     local configPath = mq.configDir .. '/deficithealer_' .. charName .. '.lua'
     local f = io.open(configPath, 'r')
     if f then
         f:close()
-        local saved = dofile(configPath)
-        if saved then
+        local ok, saved = pcall(dofile, configPath)
+        if ok and saved and type(saved) == 'table' then
             for k, v in pairs(saved) do
                 if Config[k] ~= nil then
                     Config[k] = v
@@ -69,6 +73,10 @@ function Config.Load(charName)
 end
 
 function Config.Save(charName)
+    if not charName or charName == '' then
+        return false
+    end
+
     local configPath = mq.configDir .. '/deficithealer_' .. charName .. '.lua'
     local f = io.open(configPath, 'w')
     if f then

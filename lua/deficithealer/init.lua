@@ -43,7 +43,7 @@ function DeficitHealer.Init()
     TargetMonitor.Init()
     HealSelector.Init(Config, HealTracker)
     Proactive.Init(Config, HealTracker, TargetMonitor)
-    Analytics.Init()
+    Analytics.Init(analyticsHistory)  -- Pass saved history to restore it
     UI.Init(Config, HealTracker, TargetMonitor, HealSelector, Analytics)
 
     DeficitHealer.running = true

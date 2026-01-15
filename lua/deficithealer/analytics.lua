@@ -18,7 +18,7 @@ local Analytics = {
 local MAX_REACTION_TIMES = 50
 local MAX_HISTORY_SESSIONS = 10
 
-function Analytics.Init()
+function Analytics.Init(savedHistory)
     Analytics.session = {
         startTime = os.time(),
         healsCount = 0,
@@ -33,6 +33,13 @@ function Analytics.Init()
             large = {},   -- > 50% deficit
         },
     }
+
+    -- Restore saved history if provided
+    if savedHistory and type(savedHistory) == 'table' then
+        Analytics.history = savedHistory
+    else
+        Analytics.history = {}
+    end
 end
 
 function Analytics.RecordHeal(spellName, healAmount, deficit, targetName)
