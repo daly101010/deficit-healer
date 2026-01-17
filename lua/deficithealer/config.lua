@@ -51,6 +51,12 @@ local Config = {
     hotLearnIntervalSec = 30,       -- Min seconds between forced HoTs per target
     quickHealsEmergencyOnly = true, -- Restrict quick heals to emergencies only
 
+    -- Promised Heal Behavior
+    promisedEnabled = true,         -- Enable Promised heals
+    promisedDelaySeconds = 18,      -- Delay before Promised heal lands (spell-specific)
+    promisedSafetyFloorPct = 35,    -- Min HP% to maintain while waiting for Promised
+    promisedRolling = true,         -- Keep Promised rolling on MT (cast new one when previous lands)
+
     -- Spell Ducking (cancel mid-cast if target is healed by someone else)
     duckEnabled = true,             -- Enable spell ducking
     duckHpThreshold = 85,           -- Duck direct heals if target HP goes above this %

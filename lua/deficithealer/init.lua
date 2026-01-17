@@ -1715,7 +1715,9 @@ function DeficitHealer.ProcessHealing()
             if shouldPromised and promisedInfo then
                 -- Proactive heals don't have deficit context, pass 0
                 DeficitHealer.CastHeal(promisedInfo.spell, t.name, 0, 0, 'promised', promisedInfo.details, t)
-                Proactive.RecordPromised(t.name, promisedInfo.spell, getSpellDurationSec(promisedInfo.spell))
+                local promisedDelay = Config.promisedDelaySeconds or 18
+                local promisedExpected = promisedInfo.expected or 0
+                Proactive.RecordPromised(t.name, promisedInfo.spell, getSpellDurationSec(promisedInfo.spell), promisedExpected, promisedDelay)
                 return
             end
         end

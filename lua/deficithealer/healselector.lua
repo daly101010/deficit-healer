@@ -426,6 +426,17 @@ function HealSelector.SelectHeal(targetInfo, situation)
     end
 
     local deficitPct = (targetInfo.maxHP > 0) and (deficit / targetInfo.maxHP) * 100 or 0
+
+    -- Check if Promised heal is pending and safe to wait for it
+    -- This allows the tank to drop lower knowing the Promised will cover them
+    if Proactive and Proactive.IsSafeToWaitForPromised then
+        local isSafe, projection = Proactive.IsSafeToWaitForPromised(targetInfo)
+        if isSafe and projection then
+            local reason = 'promised_covering|' .. (projection.details or '')
+            return nil, reason
+        end
+    end
+
     if config.considerIncomingHot and targetInfo.incomingHotRemaining and targetInfo.incomingHotRemaining > 0
         and targetInfo.recentDps <= config.sustainedDamageThreshold then
         local coveragePct = config.hotIncomingCoveragePct or 100
