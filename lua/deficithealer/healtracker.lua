@@ -5,7 +5,58 @@ local HealTracker = {
     heals = {},          -- spellName -> { baseAvg, critAvg, critRate, count, ... }
     recentHeals = {},    -- last N heals for trend calculation
     learningMode = true,
+    cachedHealingGiftRate = nil,  -- Cached AA-based crit rate
+    lastAACheck = 0,              -- Last time we checked the AA
 }
+
+-- Healing Gift AA crit chance lookup by rank
+-- Each rank adds approximately 2-3% crit chance
+-- Data from: https://www.raidloot.com/class/cleric#/aa/Archetype/Healing_Gift
+local HEALING_GIFT_CRIT_PCT = {
+    [0] = 0,
+    [1] = 2, [2] = 4, [3] = 7, [4] = 10, [5] = 13,
+    [6] = 16, [7] = 18, [8] = 20, [9] = 22, [10] = 24,
+    [11] = 26, [12] = 28,  -- Secrets of Faydwer cap shown in screenshot
+    -- Later expansions add more ranks
+    [13] = 30, [14] = 32, [15] = 34, [16] = 36, [17] = 38,
+    [18] = 40, [19] = 42, [20] = 44, [21] = 46, [22] = 48,
+    [23] = 50, [24] = 52, [25] = 54, [26] = 56, [27] = 58,
+    [28] = 60, [29] = 62, [30] = 64, [31] = 66, [32] = 68,
+    [33] = 70, [34] = 72, [35] = 74, [36] = 76,
+}
+
+-- Get crit chance from Healing Gift AA (returns 0.0 to 1.0)
+-- Caches the result for 60 seconds to avoid repeated TLO calls
+function HealTracker.GetHealingGiftCritRate()
+    local now = os.time()
+
+    -- Use cached value if recent (AA doesn't change often)
+    if HealTracker.cachedHealingGiftRate and (now - HealTracker.lastAACheck) < 60 then
+        return HealTracker.cachedHealingGiftRate
+    end
+
+    local aa = mq.TLO.Me.AltAbility('Healing Gift')
+    if not aa or not aa() then
+        HealTracker.cachedHealingGiftRate = 0
+        HealTracker.lastAACheck = now
+        return 0
+    end
+
+    local rank = aa.Rank() or 0
+    local critPct = HEALING_GIFT_CRIT_PCT[rank]
+
+    -- If rank is higher than our table, extrapolate (2% per rank)
+    if not critPct then
+        local maxKnownRank = 36
+        local maxKnownPct = 76
+        critPct = maxKnownPct + ((rank - maxKnownRank) * 2)
+        critPct = math.min(critPct, 100)  -- Cap at 100%
+    end
+
+    HealTracker.cachedHealingGiftRate = critPct / 100
+    HealTracker.lastAACheck = now
+    return HealTracker.cachedHealingGiftRate
+end
 
 local function updateLearningMode()
     local reliableCount = 0
@@ -104,22 +155,31 @@ function HealTracker.GetExpectedHeal(spellName)
         return nil -- Not enough data
     end
 
-    -- If we have crit tracking data, calculate expected value properly
-    local baseCount = data.baseCount or 0
-    local critCount = data.critCount or 0
-    local totalCount = baseCount + critCount
+    -- Use AA-based crit rate (more accurate than empirical tracking)
+    local critRate = HealTracker.GetHealingGiftCritRate()
 
-    if totalCount >= 3 and baseCount > 0 then
-        local critRate = critCount / totalCount
-        local baseAvg = data.baseAvg or data.avg
-        local critAvg = data.critAvg or (baseAvg * 2)  -- Default crit to 2x base
-
-        -- Expected value = base * (1 - critRate) + crit * critRate
-        return (baseAvg * (1 - critRate)) + (critAvg * critRate)
+    -- Get base heal amount (non-crit average, or fall back to overall avg)
+    local baseAvg = data.baseAvg
+    if not baseAvg or baseAvg <= 0 then
+        -- No non-crit data yet, estimate from overall average
+        -- If we only have crits, divide by 2 to estimate base
+        if data.critAvg and data.critAvg > 0 and (data.baseCount or 0) == 0 then
+            baseAvg = data.critAvg / 2
+        else
+            baseAvg = data.avg
+        end
     end
 
-    -- Fall back to simple average if no crit data
-    return data.avg
+    -- Crit heals are 2x base (per Healing Gift AA description)
+    local critAvg = baseAvg * 2
+
+    -- If we have actual crit data, use it instead
+    if data.critAvg and data.critAvg > 0 then
+        critAvg = data.critAvg
+    end
+
+    -- Expected value = base * (1 - critRate) + crit * critRate
+    return (baseAvg * (1 - critRate)) + (critAvg * critRate)
 end
 
 -- Get crit rate for a spell (0.0 to 1.0)
@@ -143,13 +203,16 @@ function HealTracker.GetDetailedStats(spellName)
     local baseCount = data.baseCount or 0
     local critCount = data.critCount or 0
     local totalCount = baseCount + critCount
-    local critRate = totalCount > 0 and (critCount / totalCount) or 0
+    local empiricalCritRate = totalCount > 0 and (critCount / totalCount) or 0
+    local aaCritRate = HealTracker.GetHealingGiftCritRate()
 
     return {
         baseAvg = data.baseAvg or data.avg,
         critAvg = data.critAvg or 0,
-        critRate = critRate,
-        critPct = critRate * 100,
+        critRate = aaCritRate,           -- Use AA-based rate as primary
+        critPct = aaCritRate * 100,
+        empiricalCritRate = empiricalCritRate,
+        empiricalCritPct = empiricalCritRate * 100,
         totalCount = totalCount,
         baseCount = baseCount,
         critCount = critCount,
