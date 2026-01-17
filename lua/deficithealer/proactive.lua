@@ -251,17 +251,6 @@ function Proactive.ShouldApplyHot(targetInfo, situation)
         return false, nil
     end
 
-    -- Check combat assessment - don't use HoT if fight is ending
-    -- Get typical HoT duration for the check (use config or default)
-    local assessment = situation and situation.combatAssessment
-    if assessment then
-        local hotDuration = config.hotTypicalDuration or 36  -- Default HoT duration
-        local allowed, reason = CombatAssessor.ShouldAllowHot(assessment, hotDuration)
-        if not allowed then
-            return false, nil  -- Fight too short for HoT to be useful
-        end
-    end
-
     -- Role-based HoT restriction: Long HoTs are only efficient on tanks (MT/MA)
     -- Non-tanks only get HoTs if they have sustained incoming damage
     local isPriorityTarget = targetInfo.role == 'MT' or targetInfo.role == 'MA'
@@ -314,36 +303,52 @@ function Proactive.ShouldApplyHot(targetInfo, situation)
     if isPriorityTarget and isHighPressure then
         useLight = false  -- Only tanks in high-pressure get big HoT
     end
+
+    -- Select the HoT spell first, then check combat assessment with actual duration
+    local best = nil
     if selector and selector.SelectBestHot then
-        local best = selector.SelectBestHot(targetInfo, useLight)
-        if best then
-            if allowLearn then
-                Proactive.lastHotLearnAttempt[targetInfo.name] = os.time()
-                if best.details then
-                    best.details = best.details .. ' | trigger=hot_learn_force'
-                else
-                    best.details = 'trigger=hot_learn_force'
-                end
-            end
-            if useLight then
-                best.details = (best.details or '') .. ' lightHot=true'
-            else
-                best.details = (best.details or '') .. ' bigHot=true highPressure=true'
-            end
-            return true, best
-        end
+        best = selector.SelectBestHot(targetInfo, useLight)
     else
         -- Fallback: use hotLight by default, hot only in high pressure
         local hotList = config.spells.hotLight
         if not useLight or not hotList or #hotList == 0 then
             hotList = config.spells.hot
         end
-        for _, spellName in ipairs(hotList) do
-            return true, { spell = spellName }
+        if hotList and #hotList > 0 then
+            best = { spell = hotList[1] }
         end
     end
 
-    return false, nil
+    if not best then
+        return false, nil
+    end
+
+    -- Check combat assessment with actual spell duration (not config default)
+    -- This allows short HoTs in survival mode while blocking long ones
+    local assessment = situation and situation.combatAssessment
+    if assessment then
+        local actualDuration = best.duration or config.hotTypicalDuration or 36
+        local allowed, reason = CombatAssessor.ShouldAllowHot(assessment, actualDuration)
+        if not allowed then
+            return false, nil  -- Fight too short or long HoT blocked in survival mode
+        end
+    end
+
+    -- Add details
+    if allowLearn then
+        Proactive.lastHotLearnAttempt[targetInfo.name] = os.time()
+        if best.details then
+            best.details = best.details .. ' | trigger=hot_learn_force'
+        else
+            best.details = 'trigger=hot_learn_force'
+        end
+    end
+    if useLight then
+        best.details = (best.details or '') .. ' lightHot=true'
+    else
+        best.details = (best.details or '') .. ' bigHot=true highPressure=true'
+    end
+    return true, best
 end
 
 function Proactive.ShouldApplyGroupHot(targets, situation)
@@ -394,12 +399,12 @@ function Proactive.ShouldApplyPromised(targetInfo, situation)
         return false, nil
     end
 
-    -- Check combat assessment - don't use Promised if fight is ending or in survival mode
+    -- Check combat assessment - don't use Promised if fight is ending or tank below floor
     local assessment = situation and situation.combatAssessment
     if assessment then
-        local allowed, reason = CombatAssessor.ShouldAllowPromised(assessment)
+        local allowed, reason = CombatAssessor.ShouldAllowPromised(assessment, targetInfo.pctHP)
         if not allowed then
-            return false, nil  -- Fight too short or survival mode
+            return false, nil  -- Fight too short or tank below safety floor
         end
     end
 

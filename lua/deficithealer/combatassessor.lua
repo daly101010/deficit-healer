@@ -229,7 +229,8 @@ function CombatAssessor.IsSurvivalMode(targetInfo)
     return true, dpsPercent
 end
 
--- Estimate minimum fight duration based on mob TTKs
+-- Estimate fight duration based on average mob TTK (ignoring near-dead mobs)
+-- Using average instead of minimum prevents one near-dead mob from marking fight as "ending"
 -- Returns: estimatedSeconds, mobData[], totalSamples
 function CombatAssessor.EstimateFightDuration()
     local mobs = CombatAssessor.UpdateMobTracking()
@@ -238,8 +239,12 @@ function CombatAssessor.EstimateFightDuration()
         return 0, {}, 0
     end
 
+    local config = CombatAssessor.config
+    local nearDeadThreshold = (config and config.nearDeadMobPct) or 10  -- Ignore mobs below 10% HP
+
     local mobData = {}
-    local minTTK = math.huge
+    local totalTTK = 0
+    local ttkCount = 0
     local totalHpPct = 0
     local totalSamples = 0
 
@@ -251,19 +256,24 @@ function CombatAssessor.EstimateFightDuration()
         table.insert(mobData, mob)
         totalHpPct = totalHpPct + mob.hpPct
 
-        if ttk and ttk > 0 and ttk < minTTK then
-            minTTK = ttk
+        -- Only include mobs above near-dead threshold in TTK average
+        -- This prevents one dying mob from marking the whole fight as "ending"
+        if ttk and ttk > 0 and mob.hpPct > nearDeadThreshold then
+            totalTTK = totalTTK + ttk
+            ttkCount = ttkCount + 1
         end
     end
 
-    -- If we couldn't calculate TTK, estimate from average HP%
-    if minTTK == math.huge then
-        -- Fallback: assume 30 seconds for a mob at 100% HP
+    local avgTTK
+    if ttkCount > 0 then
+        avgTTK = totalTTK / ttkCount
+    else
+        -- Fallback: estimate from average HP% (assume 30 seconds for a mob at 100% HP)
         local avgHpPct = totalHpPct / #mobs
-        minTTK = (avgHpPct / 100) * 30
+        avgTTK = (avgHpPct / 100) * 30
     end
 
-    return minTTK, mobData, totalSamples
+    return avgTTK, mobData, totalSamples
 end
 
 -- Determine fight phase based on mob HP and TTK
@@ -390,9 +400,15 @@ end
 
 -- Check if HoT should be allowed based on fight duration
 function CombatAssessor.ShouldAllowHot(assessment, hotDurationSec)
-    if not assessment then return true end
+    if not assessment then return true, nil end
 
     local config = CombatAssessor.config
+
+    -- Allow HoTs when not in combat (no mobs on XTarget)
+    -- This prevents blocking HoTs out of combat or when XTarget isn't populated
+    if assessment.mobCount == 0 or assessment.fightPhase == 'none' then
+        return true, nil
+    end
 
     -- In survival mode, only allow HoT if it's a short/light HoT
     -- Long HoTs waste time casting when we need fast heals

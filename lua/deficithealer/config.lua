@@ -64,6 +64,7 @@ local Config = {
     survivalModeDpsPct = 5,         -- DPS as % of tank HP/sec to trigger survival mode (5 = 5%/sec)
     survivalModeTankFullPct = 90,   -- Tank HP% above this gates survival mode (avoid false positives)
     ttkWindowSec = 5,               -- Smoothed window for TTK calculation (seconds)
+    nearDeadMobPct = 10,            -- Ignore mobs below this HP% when calculating avg TTK
     fightPhaseStartingPct = 70,     -- Avg mob HP% above this = fight starting
     fightPhaseEndingPct = 25,       -- Avg mob HP% below this = fight ending
     fightPhaseEndingTTK = 20,       -- TTK below this seconds = fight ending
