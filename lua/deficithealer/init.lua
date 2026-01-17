@@ -10,6 +10,7 @@ local HealTracker = require('deficithealer.healtracker')
 local TargetMonitor = require('deficithealer.targetmonitor')
 local HealSelector = require('deficithealer.healselector')
 local Proactive = require('deficithealer.proactive')
+local CombatAssessor = require('deficithealer.combatassessor')
 local Analytics = require('deficithealer.analytics')
 local UI = require('deficithealer.ui')
 local Persistence = require('deficithealer.persistence')
@@ -590,9 +591,22 @@ local function logTickSummary(allTargets, situation)
 
     local mobs, mezzed, maPct, healers = getControlMetrics()
     local maText = maPct and string.format('%.1f', maPct) or 'na'
+
+    -- Combat assessment info
+    local combatText = ''
+    if situation and situation.combatAssessment then
+        local ca = situation.combatAssessment
+        combatText = string.format(' combat=[phase=%s ttk=%.0fs survival=%s dpsPct=%.1f%%]',
+            ca.fightPhase or 'none',
+            ca.estimatedDurationSec or 0,
+            tostring(ca.survivalMode or false),
+            ca.dpsPercent or 0
+        )
+    end
+
     logDebug(string.format(
-        'TICK targets=%d emergency=%s multipleHurt=%s efficiency=%.1f overheal=%.1f mobs100=%d mezzed100=%d maTargetPct=%s healers=%d top=[%s]%s',
-        targets, emergency, multiple, efficiency, overheal, mobs, mezzed, maText, healers, table.concat(top, ','), dpsText
+        'TICK targets=%d emergency=%s multipleHurt=%s efficiency=%.1f overheal=%.1f mobs100=%d mezzed100=%d maTargetPct=%s healers=%d top=[%s]%s%s',
+        targets, emergency, multiple, efficiency, overheal, mobs, mezzed, maText, healers, table.concat(top, ','), dpsText, combatText
     ))
 end
 
@@ -1256,6 +1270,7 @@ function DeficitHealer.Init()
     TargetMonitor.Init(Config)
     HealSelector.Init(Config, HealTracker)
     Proactive.Init(Config, HealTracker, TargetMonitor, HealSelector)
+    CombatAssessor.Init(Config, TargetMonitor)
     Analytics.Init(analyticsHistory)  -- Pass saved history to restore it
     UI.Init(Config, HealTracker, TargetMonitor, HealSelector, Analytics)
 
@@ -1516,6 +1531,15 @@ function DeficitHealer.ProcessHealing()
     situation.activeMobs = activeMobs
     local maxLowMobs = Config.lowPressureMobCount or 1
     situation.lowPressure = (not situation.hasEmergency) and (not situation.multipleHurt) and (activeMobs <= maxLowMobs)
+
+    -- Combat assessment for fight duration and survival mode
+    local tankInfo = priorityTargets[1] or allTargets[1]
+    local combatAssessment = CombatAssessor.Assess(tankInfo)
+    situation.combatAssessment = combatAssessment
+    situation.survivalMode = combatAssessment and combatAssessment.survivalMode or false
+    situation.fightPhase = combatAssessment and combatAssessment.fightPhase or 'none'
+    situation.estimatedFightDuration = combatAssessment and combatAssessment.estimatedDurationSec or 0
+
     logTickSummary(allTargets, situation)
     logDpsValidation(allTargets)
 
@@ -1703,7 +1727,7 @@ function DeficitHealer.ProcessHealing()
     -- Priority 5: Proactive heals (HoTs/Promised when stable)
     if not situation.hasEmergency then
         for _, t in ipairs(priorityTargets) do
-            local shouldHot, hotInfo = Proactive.ShouldApplyHot(t)
+            local shouldHot, hotInfo = Proactive.ShouldApplyHot(t, situation)
             if shouldHot and hotInfo then
                 -- Proactive heals don't have deficit context, pass 0
                 DeficitHealer.CastHeal(hotInfo.spell, t.name, 0, 0, 'hot', hotInfo.details, t)

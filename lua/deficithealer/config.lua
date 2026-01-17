@@ -46,6 +46,7 @@ local Config = {
     bigHotMinMobDps = 3000,         -- Use big HoT when total incoming mob DPS exceeds this
     bigHotMinXTargetCount = 4,      -- Use big HoT when xtarget count >= this (>3 mobs = long fight)
     bigHotXTargetRange = 100,       -- Only count xtarget mobs within this range
+    hotTypicalDuration = 36,        -- Typical HoT duration in seconds (for fight duration checks)
     hotLearnForce = true,           -- Allow HoT casting for learning baseline
     hotLearnMaxDeficitPct = 35,     -- Max missing HP% to force HoTs while learning
     hotLearnIntervalSec = 30,       -- Min seconds between forced HoTs per target
@@ -54,8 +55,20 @@ local Config = {
     -- Promised Heal Behavior
     promisedEnabled = true,         -- Enable Promised heals
     promisedDelaySeconds = 18,      -- Delay before Promised heal lands (spell-specific)
-    promisedSafetyFloorPct = 35,    -- Min HP% to maintain while waiting for Promised
+    promisedSafetyFloorPct = 35,    -- Min HP% to maintain while waiting for Promised (normal)
+    promisedSurvivalSafetyFloorPct = 55, -- Min HP% in survival mode (higher due to spike damage risk)
     promisedRolling = true,         -- Keep Promised rolling on MT (cast new one when previous lands)
+    promisedDurationBuffer = 5,     -- Extra seconds buffer when checking if fight lasts long enough
+
+    -- Combat Assessment (fight duration and survival mode)
+    survivalModeDpsPct = 5,         -- DPS as % of tank HP/sec to trigger survival mode (5 = 5%/sec)
+    survivalModeTankFullPct = 90,   -- Tank HP% above this gates survival mode (avoid false positives)
+    ttkWindowSec = 5,               -- Smoothed window for TTK calculation (seconds)
+    fightPhaseStartingPct = 70,     -- Avg mob HP% above this = fight starting
+    fightPhaseEndingPct = 25,       -- Avg mob HP% below this = fight ending
+    fightPhaseEndingTTK = 20,       -- TTK below this seconds = fight ending
+    hotMinFightDurationPct = 50,    -- Require fight to last at least this % of HoT duration
+    survivalModeMaxHotDuration = 12, -- Max HoT duration allowed in survival mode (fast HoTs only)
 
     -- Spell Ducking (cancel mid-cast if target is healed by someone else)
     duckEnabled = true,             -- Enable spell ducking

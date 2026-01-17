@@ -1,5 +1,6 @@
 -- proactive.lua
 local mq = require('mq')
+local CombatAssessor = require('deficithealer.combatassessor')
 
 local Proactive = {
     config = nil,
@@ -177,8 +178,10 @@ function Proactive.IsSafeToWaitForPromised(targetInfo)
         return false, nil
     end
 
-    -- Safety floor - don't let HP drop below this while waiting
-    local safetyFloorPct = config.promisedSafetyFloorPct or 35
+    -- Safety floor - use dynamic floor that increases in survival mode
+    -- In survival mode (high DPS), we need a higher floor since damage can spike
+    local safetyFloorPct = CombatAssessor.GetPromisedSafetyFloor and CombatAssessor.GetPromisedSafetyFloor()
+        or (config.promisedSafetyFloorPct or 35)
 
     -- Also check the minimum HP during the wait (before Promised lands)
     -- This is: currentHP - expectedDamage + hotHealing (without Promised)
@@ -193,8 +196,8 @@ function Proactive.IsSafeToWaitForPromised(targetInfo)
     projection.safetyFloorPct = safetyFloorPct
     projection.isSafe = isSafe
     projection.details = projection.details .. string.format(
-        ' minPct=%.1f safetyFloor=%d%% safe=%s',
-        minPctDuringWait, safetyFloorPct, tostring(isSafe)
+        ' minPct=%.1f safetyFloor=%d%% safe=%s timeToLand=%ds',
+        minPctDuringWait, safetyFloorPct, tostring(isSafe), promisedInfo.timeRemaining or 0
     )
 
     return isSafe, projection
@@ -227,7 +230,7 @@ function Proactive.HasActivePromised(targetName)
     return data and data.expireTime > os.time()
 end
 
-function Proactive.ShouldApplyHot(targetInfo)
+function Proactive.ShouldApplyHot(targetInfo, situation)
     local config = Proactive.config
     local monitor = Proactive.targetMonitor
     local selector = Proactive.healSelector
@@ -246,6 +249,17 @@ function Proactive.ShouldApplyHot(targetInfo)
     -- Don't apply if no deficit
     if targetInfo.deficit <= 0 then
         return false, nil
+    end
+
+    -- Check combat assessment - don't use HoT if fight is ending
+    -- Get typical HoT duration for the check (use config or default)
+    local assessment = situation and situation.combatAssessment
+    if assessment then
+        local hotDuration = config.hotTypicalDuration or 36  -- Default HoT duration
+        local allowed, reason = CombatAssessor.ShouldAllowHot(assessment, hotDuration)
+        if not allowed then
+            return false, nil  -- Fight too short for HoT to be useful
+        end
     end
 
     -- Role-based HoT restriction: Long HoTs are only efficient on tanks (MT/MA)
@@ -378,6 +392,15 @@ function Proactive.ShouldApplyPromised(targetInfo, situation)
     -- Only for tanks (priority targets)
     if targetInfo.role ~= 'MT' and targetInfo.role ~= 'MA' then
         return false, nil
+    end
+
+    -- Check combat assessment - don't use Promised if fight is ending or in survival mode
+    local assessment = situation and situation.combatAssessment
+    if assessment then
+        local allowed, reason = CombatAssessor.ShouldAllowPromised(assessment)
+        if not allowed then
+            return false, nil  -- Fight too short or survival mode
+        end
     end
 
     -- Check if there's already a Promised pending (hasn't landed yet)

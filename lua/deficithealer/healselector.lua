@@ -61,7 +61,8 @@ local function getSingleWeights(config, situation)
     local defaults = { coverage = 3.0, manaEff = 0.5, overheal = -1.5 }
     local presets = config and config.scoringPresets or nil
     local weights = (presets and presets.normal) or defaults
-    if situation and situation.hasEmergency and presets and presets.emergency then
+    -- Survival mode or emergency both use emergency weights (prioritize speed over efficiency)
+    if situation and (situation.hasEmergency or situation.survivalMode) and presets and presets.emergency then
         weights = presets.emergency
     elseif situation and situation.lowPressure and presets and presets.lowPressure then
         weights = presets.lowPressure
