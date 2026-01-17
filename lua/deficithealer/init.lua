@@ -787,6 +787,8 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
     local learnAmount = fullAmountNum or actualAmount
     if learnAmount and spell then
         spell = spell:gsub('%.$', '')  -- Remove trailing period
+        -- Detect critical heal before stripping the suffix
+        local isCrit = spell:match(' %(Critical%)$') ~= nil
         spell = spell:gsub(' %(Critical%)$', '')  -- Remove (Critical) suffix
         if target then
             target = target:gsub('%s+over time$', '')
@@ -846,8 +848,8 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
         end
 
         if isOurCast and Config.IsConfiguredSpell(spell) then
-            -- Track for learning (only configured spells)
-            HealTracker.RecordHeal(spell, learnAmount)
+            -- Track for learning (only configured spells), including crit status
+            HealTracker.RecordHeal(spell, learnAmount, isCrit)
             local deficitAtCast = 0
             local expectedAtCast = 0
             if isGroupHeal then
