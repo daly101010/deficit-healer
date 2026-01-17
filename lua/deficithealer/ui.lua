@@ -430,7 +430,11 @@ function UI.DrawConfigTab()
             for gem = 1, 13 do
                 local spellName = mq.TLO.Me.Gem(gem).Name()
                 if spellName and spellName ~= '' then
-                    if ImGui.SmallButton(spellName .. '##add' .. category) then
+                    local isValid = true
+                    if config.IsValidSpellForCategory then
+                        isValid = config.IsValidSpellForCategory(category, spellName)
+                    end
+                    if isValid and ImGui.SmallButton(spellName .. '##add' .. category) then
                         -- Check if spell already exists before adding
                         local exists = false
                         for _, s in ipairs(config.spells[category]) do
@@ -442,6 +446,8 @@ function UI.DrawConfigTab()
                         if not exists then
                             table.insert(config.spells[category], spellName)
                         end
+                    elseif not isValid then
+                        ImGui.TextDisabled(spellName)
                     end
                 end
             end

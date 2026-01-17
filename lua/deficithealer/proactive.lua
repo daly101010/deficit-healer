@@ -5,14 +5,16 @@ local Proactive = {
     config = nil,
     healTracker = nil,
     targetMonitor = nil,
+    healSelector = nil,
     activeHots = {},      -- targetName -> { spell, expireTime }
     activePromised = {},  -- targetName -> { spell, expireTime }
 }
 
-function Proactive.Init(config, healTracker, targetMonitor)
+function Proactive.Init(config, healTracker, targetMonitor, healSelector)
     Proactive.config = config
     Proactive.healTracker = healTracker
     Proactive.targetMonitor = targetMonitor
+    Proactive.healSelector = healSelector
 end
 
 function Proactive.Update()
@@ -60,6 +62,7 @@ end
 function Proactive.ShouldApplyHot(targetInfo)
     local config = Proactive.config
     local monitor = Proactive.targetMonitor
+    local selector = Proactive.healSelector
 
     -- Don't apply if already has HoT
     if Proactive.HasActiveHot(targetInfo.name) then
@@ -78,15 +81,54 @@ function Proactive.ShouldApplyHot(targetInfo)
     end
 
     -- Find appropriate HoT
-    for _, spellName in ipairs(config.spells.hot) do
-        return true, spellName
+    if selector and selector.SelectBestHot then
+        local best = selector.SelectBestHot(targetInfo)
+        if best then
+            return true, best.spell
+        end
+    else
+        for _, spellName in ipairs(config.spells.hot) do
+            return true, spellName
+        end
     end
 
     return false, nil
 end
 
+function Proactive.ShouldApplyGroupHot(targets, situation)
+    local config = Proactive.config
+    local selector = Proactive.healSelector
+
+    if situation.hasEmergency then
+        return false, nil, nil, nil
+    end
+
+    local hurtCount = 0
+    local totalDeficit = 0
+    for _, t in ipairs(targets) do
+        if t.deficit > 0 then
+            hurtCount = hurtCount + 1
+            totalDeficit = totalDeficit + t.deficit
+        end
+    end
+
+    if hurtCount < (config.groupHealMinCount or 2) then
+        return false, nil, nil, nil
+    end
+
+    if selector and selector.SelectBestGroupHot then
+        local best = selector.SelectBestGroupHot(targets, totalDeficit, hurtCount)
+        if best then
+            return true, best.spell, totalDeficit, best.targets or hurtCount
+        end
+    end
+
+    return false, nil, nil, nil
+end
+
 function Proactive.ShouldApplyPromised(targetInfo, situation)
     local config = Proactive.config
+    local selector = Proactive.healSelector
 
     -- Only for tanks (priority targets)
     if targetInfo.role ~= 'MT' and targetInfo.role ~= 'MA' then
@@ -109,8 +151,15 @@ function Proactive.ShouldApplyPromised(targetInfo, situation)
     end
 
     -- Find appropriate Promised heal
-    for _, spellName in ipairs(config.spells.promised) do
-        return true, spellName
+    if selector and selector.SelectBestPromised then
+        local best = selector.SelectBestPromised(targetInfo)
+        if best then
+            return true, best.spell
+        end
+    else
+        for _, spellName in ipairs(config.spells.promised) do
+            return true, spellName
+        end
     end
 
     return false, nil
