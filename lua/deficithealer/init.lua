@@ -792,7 +792,7 @@ mq.event('HealDebug', '#*#healed#*#hit points#*#', function(line)
     Logger.Log('trace', 'HEAL_RAW: ' .. tostring(line))
 end)
 
-local function handleHealLanded(line, target, amount, fullAmount, spell)
+local function handleHealLanded(line, target, amount, fullAmount, spell, isCrit)
     if shouldSkipHealLine(line) then
         return
     end
@@ -802,9 +802,8 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
     local learnAmount = fullAmountNum or actualAmount
     if learnAmount and spell then
         spell = spell:gsub('%.$', '')  -- Remove trailing period
-        -- Detect critical heal before stripping the suffix
-        local isCrit = spell:match(' %(Critical%)$') ~= nil
-        spell = spell:gsub(' %(Critical%)$', '')  -- Remove (Critical) suffix
+        -- isCrit is now passed from event pattern matching
+        isCrit = isCrit or false
         if target then
             target = target:gsub('%s+over time$', '')
         end
@@ -941,20 +940,34 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
 end
 
 -- Event patterns for heal landing (multiple variants across logs/clients)
+-- Critical heal patterns MUST come first (more specific matches first)
+mq.event('HealLandedCrit', 'You healed #1# for #2# (#3#) hit points by #4#. (Critical)', function(line, target, amount, fullAmount, spell)
+    handleHealLanded(line, target, amount, fullAmount, spell, true)
+end)
+mq.event('HealLandedNoFullCrit', 'You healed #1# for #2# hit points by #3#. (Critical)', function(line, target, amount, spell)
+    handleHealLanded(line, target, amount, nil, spell, true)
+end)
+mq.event('HealLandedHaveCrit', 'You have healed #1# for #2# (#3#) hit points by #4#. (Critical)', function(line, target, amount, fullAmount, spell)
+    handleHealLanded(line, target, amount, fullAmount, spell, true)
+end)
+mq.event('HealLandedHaveNoFullCrit', 'You have healed #1# for #2# hit points by #3#. (Critical)', function(line, target, amount, spell)
+    handleHealLanded(line, target, amount, nil, spell, true)
+end)
+-- Non-critical patterns
 mq.event('HealLanded', 'You healed #1# for #2# (#3#) hit points by #4#', function(line, target, amount, fullAmount, spell)
-    handleHealLanded(line, target, amount, fullAmount, spell)
+    handleHealLanded(line, target, amount, fullAmount, spell, false)
 end)
 mq.event('HealLandedNoFull', 'You healed #1# for #2# hit points by #3#', function(line, target, amount, spell)
-    handleHealLanded(line, target, amount, nil, spell)
+    handleHealLanded(line, target, amount, nil, spell, false)
 end)
 mq.event('HealLandedHave', 'You have healed #1# for #2# (#3#) hit points by #4#', function(line, target, amount, fullAmount, spell)
-    handleHealLanded(line, target, amount, fullAmount, spell)
+    handleHealLanded(line, target, amount, fullAmount, spell, false)
 end)
 mq.event('HealLandedHaveNoFull', 'You have healed #1# for #2# hit points by #3#', function(line, target, amount, spell)
-    handleHealLanded(line, target, amount, nil, spell)
+    handleHealLanded(line, target, amount, nil, spell, false)
 end)
 mq.event('HealLandedYour', 'Your #1# heals #2# for #3# hit points', function(line, spell, target, amount)
-    handleHealLanded(line, target, amount, nil, spell)
+    handleHealLanded(line, target, amount, nil, spell, false)
 end)
 
 -- Cast interruption / fizzle tracking
