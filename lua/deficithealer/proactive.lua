@@ -330,7 +330,7 @@ function Proactive.ShouldApplyHot(targetInfo, situation)
         local actualDuration = best.duration or config.hotTypicalDuration or 36
         local allowed, reason = CombatAssessor.ShouldAllowHot(assessment, actualDuration)
         if not allowed then
-            return false, nil  -- Fight too short or long HoT blocked in survival mode
+            return false, nil, reason  -- Return reason for logging
         end
     end
 
@@ -404,7 +404,7 @@ function Proactive.ShouldApplyPromised(targetInfo, situation)
     if assessment then
         local allowed, reason = CombatAssessor.ShouldAllowPromised(assessment, targetInfo.pctHP)
         if not allowed then
-            return false, nil  -- Fight too short or tank below safety floor
+            return false, nil, reason  -- Return reason for logging
         end
     end
 

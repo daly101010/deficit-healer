@@ -687,7 +687,7 @@ local function logDpsValidation(allTargets)
     ))
 end
 
-local function logHealEvent(spell, target, actual, potential, deficit, expected, flags)
+local function logHealEvent(spell, target, actual, potential, deficit, expected, flags, isCrit)
     local actualNum = tonumber(actual) or 0
     local potentialNum = tonumber(potential) or actualNum
     local deficitNum = tonumber(deficit) or 0
@@ -706,8 +706,21 @@ local function logHealEvent(spell, target, actual, potential, deficit, expected,
     end
     local mobs, mezzed, maPct, healers = getControlMetrics()
     local maText = maPct and string.format('%.1f', maPct) or 'na'
+    local critText = isCrit and ' crit=true' or ''
+
+    -- Include spell's crit stats if available
+    local critStats = ''
+    local stats = HealTracker.GetDetailedStats(spell)
+    if stats and stats.totalCount >= 3 then
+        critStats = string.format(' baseAvg=%.0f critRate=%.1f%% expected=%.0f',
+            stats.baseAvg or 0,
+            stats.critPct or 0,
+            stats.expected or 0
+        )
+    end
+
     Logger.Log('info', string.format(
-        'HEAL spell=%s target=%s actual=%d potential=%d overheal=%d eff=%.1f deficitAtCast=%d expected=%d mobs100=%d mezzed100=%d maTargetPct=%s healers=%d%s',
+        'HEAL spell=%s target=%s actual=%d potential=%d overheal=%d eff=%.1f deficitAtCast=%d expected=%d mobs100=%d mezzed100=%d maTargetPct=%s healers=%d%s%s%s',
         tostring(spell or ''),
         tostring(target or ''),
         actualNum,
@@ -720,7 +733,9 @@ local function logHealEvent(spell, target, actual, potential, deficit, expected,
         mezzed,
         maText,
         healers,
-        flagText
+        flagText,
+        critText,
+        critStats
     ))
 end
 
@@ -878,7 +893,7 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
                     logHealEvent(spell, target, actualAmount or learnAmount, learnAmount, deficitAtCast, expectedAtCast, {
                         group = true,
                         category = pendingGroupHeal and pendingGroupHeal.category or 'group',
-                    })
+                    }, isCrit)
                 end
             elseif isHotSpell then
                 if not isManualCast then
@@ -906,14 +921,14 @@ local function handleHealLanded(line, target, amount, fullAmount, spell)
                     end
                     Analytics.RecordHotTick(actualValue)
                     Analytics.RecordHeal(spell, actualValue, learnAmount, deficit, target)
-                    logHealEvent(spell, target, actualValue, learnAmount, deficitAtCast, expectedAtCast, { hot = true })
+                    logHealEvent(spell, target, actualValue, learnAmount, deficitAtCast, expectedAtCast, { hot = true }, isCrit)
                 end
             elseif not isManualCast then
                 -- Script-initiated single target heal - record analytics and clear pending info
                 local castInfo = pendingCasts[target] and pendingCasts[target][spell]
                 if castInfo then
                     Analytics.RecordHeal(spell, actualAmount or learnAmount, learnAmount, castInfo.deficit, target)
-                    logHealEvent(spell, target, actualAmount or learnAmount, learnAmount, deficitAtCast, expectedAtCast, { hot = false })
+                    logHealEvent(spell, target, actualAmount or learnAmount, learnAmount, deficitAtCast, expectedAtCast, { hot = false }, isCrit)
                     pendingCasts[target][spell] = nil
                     if next(pendingCasts[target]) == nil then
                         pendingCasts[target] = nil
@@ -1275,6 +1290,15 @@ function DeficitHealer.Init()
     CombatAssessor.Init(Config, TargetMonitor)
     Analytics.Init(analyticsHistory)  -- Pass saved history to restore it
     UI.Init(Config, HealTracker, TargetMonitor, HealSelector, Analytics)
+
+    -- Log AA modifiers at startup
+    local aaMods = HealTracker.GetAAModifiers()
+    Logger.Log('info', string.format(
+        'AA_MODIFIERS critPct=%.1f%% directHealBonus=%.1f%% hotBonus=%.1f%%',
+        aaMods.critPct or 0,
+        aaMods.directHealBonusPct or 0,
+        aaMods.hotBonusPct or 0
+    ))
 
     DeficitHealer.running = true
     DeficitHealer.shutdownCalled = false  -- Reset shutdown guard for restart
@@ -1729,15 +1753,17 @@ function DeficitHealer.ProcessHealing()
     -- Priority 5: Proactive heals (HoTs/Promised when stable)
     if not situation.hasEmergency then
         for _, t in ipairs(priorityTargets) do
-            local shouldHot, hotInfo = Proactive.ShouldApplyHot(t, situation)
+            local shouldHot, hotInfo, hotBlockReason = Proactive.ShouldApplyHot(t, situation)
             if shouldHot and hotInfo then
                 -- Proactive heals don't have deficit context, pass 0
                 DeficitHealer.CastHeal(hotInfo.spell, t.name, 0, 0, 'hot', hotInfo.details, t)
                 Proactive.RecordHot(t.name, hotInfo.spell, getSpellDurationSec(hotInfo.spell))
                 return
+            elseif hotBlockReason then
+                Logger.Log('debug', string.format('HOT_BLOCKED target=%s reason=%s', t.name or '', hotBlockReason))
             end
 
-            local shouldPromised, promisedInfo = Proactive.ShouldApplyPromised(t, situation)
+            local shouldPromised, promisedInfo, promisedBlockReason = Proactive.ShouldApplyPromised(t, situation)
             if shouldPromised and promisedInfo then
                 -- Proactive heals don't have deficit context, pass 0
                 DeficitHealer.CastHeal(promisedInfo.spell, t.name, 0, 0, 'promised', promisedInfo.details, t)
@@ -1745,6 +1771,8 @@ function DeficitHealer.ProcessHealing()
                 local promisedExpected = promisedInfo.expected or 0
                 Proactive.RecordPromised(t.name, promisedInfo.spell, getSpellDurationSec(promisedInfo.spell), promisedExpected, promisedDelay)
                 return
+            elseif promisedBlockReason then
+                Logger.Log('debug', string.format('PROMISED_BLOCKED target=%s reason=%s', t.name or '', promisedBlockReason))
             end
         end
     end
